@@ -1,0 +1,61 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+%labels
+    Author ScientistWorld
+    Description Agent container — runtime for Claude Code / Codex
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl wget git ca-certificates gnupg \
+        python3 python3-pip python3-venv \
+        build-essential unzip tar gzip \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Node.js (LTS) — required for both claude-code and codex CLIs
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+    apt-get install -y --no-install-recommends nodejs
+    rm -rf /var/lib/apt/lists/*
+
+    # Claude Code CLI. The installer puts it under /root/.local; the agent
+    # runs as the calling user, so that tree must be readable by everyone.
+    curl -fsSL https://claude.ai/install.sh | bash || echo "WARNING: Claude Code could not be installed"
+    if [ -e /root/.local/bin/claude ]; then
+        chmod a+rx /root
+        chmod -R a+rX /root/.local
+        ln -sf /root/.local/bin/claude /usr/local/bin/claude
+    fi
+
+    # Codex CLI
+    npm install -g @openai/codex || echo "WARNING: Codex could not be installed"
+
+    # An image without any agent CLI is of no use: fail the build.
+    if ! command -v claude >/dev/null 2>&1 && ! command -v codex >/dev/null 2>&1; then
+        echo "ERROR: neither Claude Code nor Codex could be installed" >&2
+        exit 1
+    fi
+
+    # Python tools
+    pip install --break-system-packages uv
+
+    # pip → uv shim (10-100x faster)
+    mv /usr/bin/pip3 /usr/bin/pip3-orig 2>/dev/null || true
+    mv /usr/bin/pip  /usr/bin/pip-orig  2>/dev/null || true
+    cat > /usr/local/bin/pip <<'SHIM'
+#!/bin/bash
+case "${1:-}" in
+    install|uninstall|freeze|list|show|check)
+        exec uv pip "$@" ;;
+    *)
+        exec /usr/bin/pip-orig "$@" ;;
+esac
+SHIM
+    chmod +x /usr/local/bin/pip
+    ln -sf /usr/local/bin/pip /usr/local/bin/pip3
+
+%environment
+    export PATH="/usr/local/bin:/root/.local/bin:$PATH"
+    export UV_SYSTEM_PYTHON=1
+    export UV_BREAK_SYSTEM_PACKAGES=1

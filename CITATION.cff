@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use Scientist World, please cite the paper."
+title: "sciworld: the Scientist World command line"
+type: software
+authors:
+  - family-names: Lu
+    given-names: Taiming
+  - family-names: Konan
+    given-names: Sachin
+  - family-names: Liu
+    given-names: Zhuang
+url: "https://ai-scientist.world"
+repository-code: "https://github.com/zlab-princeton/scientist_world_cli"
+license: MIT
+preferred-citation:
+  type: article
+  title: "Scientist World: Grow a Research World for AI-Scientists"
+  authors:
+    - family-names: Lu
+      given-names: Taiming
+    - family-names: Konan
+      given-names: Sachin
+    - family-names: Liu
+      given-names: Zhuang
+  year: 2026
+  journal: "arXiv preprint arXiv:2611.08478"
+  url: "https://arxiv.org/abs/2611.08478"
+  identifiers:
+    - type: other
+      value: "arXiv:2611.08478"
+      description: "arXiv preprint"

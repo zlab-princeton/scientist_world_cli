@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sciworld"
+version = "0.3.0"
+description = "Run an AI scientist inside a research environment built from a published paper"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Taiming Lu" }]
+keywords = ["ai", "agents", "research", "reproducibility", "benchmark", "llm"]
+dependencies = ["prompt_toolkit>=3.0"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pyflakes>=3"]
+
+[project.urls]
+Homepage = "https://ai-scientist.world"
+Repository = "https://github.com/zlab-princeton/scientist_world_cli"
+Issues = "https://github.com/zlab-princeton/scientist_world_cli/issues"
+
+[project.scripts]
+sw = "sciworld.cli:main"
+sciworld = "sciworld.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sciworld*"]
+
+[tool.setuptools.package-data]
+sciworld = ["containers/*", "prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: talks to github.com; skipped unless SCIWORLD_TEST_NETWORK=1",
+]

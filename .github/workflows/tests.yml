@@ -1,0 +1,56 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - ".github/workflows/containers.yml"
+  pull_request:
+    paths-ignore:
+      - ".github/workflows/containers.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: ${{ matrix.os }}, Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Python 3.9, the oldest supported version, is no longer provided
+          # for the newest Ubuntu image.
+          - os: ubuntu-24.04
+            python-version: "3.9"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.13"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Session managers (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tmux screen
+      - name: Session managers (macOS)
+        if: runner.os == 'macOS'
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install tmux
+      - name: Versions
+        run: |
+          bash --version | head -1
+          /bin/bash --version | head -1
+          tmux -V
+          screen --version || true
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Test
+        run: pytest -q

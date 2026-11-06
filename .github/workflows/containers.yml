@@ -1,0 +1,105 @@
+name: containers
+
+# Builds the agent image with each container runtime and runs a complete
+# session in it (tests/test_container_runtimes.py). This takes several
+# minutes per runtime, so it runs only when the files it covers change.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sciworld/containers/**"
+      - "sciworld/launcher.py"
+      - "sciworld/guard.py"
+      - "sciworld/setup_cmd.py"
+      - "tests/test_container_runtimes.py"
+      - ".github/workflows/containers.yml"
+  pull_request:
+    paths:
+      - "sciworld/containers/**"
+      - "sciworld/launcher.py"
+      - "sciworld/guard.py"
+      - "sciworld/setup_cmd.py"
+      - "tests/test_container_runtimes.py"
+      - ".github/workflows/containers.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [docker, podman, apptainer]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apptainer
+        if: matrix.runtime == 'apptainer'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apptainer uidmap fakeroot
+          # Apptainer builds and runs in user namespaces, which Ubuntu
+          # denies to unprivileged users by default.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Versions
+        run: ${{ matrix.runtime }} --version
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Build the agent image and run a session in it
+        env:
+          SCIWORLD_TEST_CONTAINERS: ${{ matrix.runtime }}
+          # /tmp is kept in memory on the runner and is too small for an image.
+          TMPDIR: ${{ runner.temp }}
+        run: pytest tests/test_container_runtimes.py -rA
+
+  # Podman on its home ground: a Fedora virtual machine with SELinux
+  # enforcing, where a container cannot read a bind-mounted directory of the
+  # user unless label separation is switched off for it.
+  selinux:
+    name: podman, SELinux enforcing
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fedora virtual machine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils ovmf
+          version=$(gh api repos/lima-vm/lima/releases/latest --jq .tag_name)
+          curl -fsSL "https://github.com/lima-vm/lima/releases/download/${version}/lima-${version#v}-Linux-x86_64.tar.gz" | sudo tar -C /usr/local -xzf -
+          limactl --version
+          limactl start --name=fedora --tty=false --cpus=2 --memory=4 --disk=30 template://fedora
+      - name: Build the agent image and run a session in it
+        run: |
+          cat > "$RUNNER_TEMP/guest.sh" <<'SCRIPT'
+          set -euxo pipefail
+          echo "SELinux: $(getenforce)"
+          sudo dnf install -y -q podman python3-pip git
+          podman --version
+          rm -rf ~/cli && cp -r "$1" ~/cli && cd ~/cli
+          python3 -m venv ~/venv
+          ~/venv/bin/pip install -q -e ".[dev]"
+          # What SELinux does to a bind mount, without and with label separation.
+          mkdir -p ~/tmp ~/probe && echo hello > ~/probe/file
+          podman run --rm -v ~/probe:/probe:ro docker.io/library/ubuntu:24.04 cat /probe/file \
+            && echo "plain bind mount: readable" || echo "plain bind mount: denied"
+          podman run --rm --security-opt label=disable -v ~/probe:/probe:ro docker.io/library/ubuntu:24.04 cat /probe/file \
+            && echo "with label=disable: readable" || echo "with label=disable: denied"
+          # Images go to Podman's usual place and temporary files to disk.
+          export TMPDIR=$HOME/tmp XDG_DATA_HOME=$HOME/.local/share
+          SCIWORLD_TEST_CONTAINERS=podman ~/venv/bin/python -m pytest tests/test_container_runtimes.py -rA
+          SCRIPT
+          limactl shell fedora bash "$RUNNER_TEMP/guest.sh" "$GITHUB_WORKSPACE"

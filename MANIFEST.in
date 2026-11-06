@@ -1,0 +1,2 @@
+include LICENSE README.md QUICKSTART.md CHANGELOG.md
+recursive-include tests *.py
