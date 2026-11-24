@@ -75,7 +75,7 @@ def cmd_list(args) -> int:
         )
     print()
     more = f" (showing {len(shown)})" if len(shown) < len(selected) else ""
-    print(f"  {S.DIM}{len(selected)} environments{more}. "
+    print(f"  {S.DIM}{len(selected)} environment{'' if len(selected) == 1 else 's'}{more}. "
           f"Start one with: {S.RESET}sw research <arxiv_id>")
     print()
     return 0
