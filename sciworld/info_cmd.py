@@ -132,7 +132,10 @@ def cmd_info(args) -> int:
         return _fail(str(exc))
     data_dir = cfg.get("data_dir") or ""
     if not data_dir:
-        return _fail(f"Data directory not set. Run {S.BOLD}sw init{S.RESET}.")
+        from sciworld.setup_cmd import NO_DATA_DIR, ensure_data_dir
+        data_dir = ensure_data_dir(cfg)
+        if not data_dir:
+            return _fail(NO_DATA_DIR)
 
     source = Path(data_dir) / "envs" / arxiv_id / "source"
     if not source.is_dir():

@@ -275,9 +275,10 @@ def cmd_research(args) -> int:
     if paper_id:
         paper_id = normalize_arxiv_id(paper_id)
     if not dest_path and not data_dir:
-        return fail(
-            f"Data directory not set. Run {S.BOLD}sw init{S.RESET} or pass {S.BOLD}--path{S.RESET}."
-        )
+        from sciworld.setup_cmd import NO_DATA_DIR, ensure_data_dir
+        data_dir = ensure_data_dir(cfg)
+        if not data_dir:
+            return fail(f"{NO_DATA_DIR} Or pass {S.BOLD}--path{S.RESET}.")
 
     # ── Backend ──
     # With --setup-only nothing runs here, so no runtime is required, and the

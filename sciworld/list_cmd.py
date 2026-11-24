@@ -63,16 +63,15 @@ def cmd_list(args) -> int:
         print()
         return 0
     print()
-    S.table_header(("ARXIV ID", 14), ("MILESTONE", 22), ("TITLE", 60))
+    S.table_header(("ARXIV ID", 14), ("TITLE", 82))
     for paper in shown:
         title = paper.get("title", "")
-        if len(title) > 58:
-            title = title[:57] + "…"
+        if len(title) > 80:
+            title = title[:79] + "…"
         S.table_row(
             [f"{S.BRIGHT_WHITE}{paper['arxiv_id']}{S.RESET}",
-             S.colored_milestone(paper.get("milestone", "none")),
              f"{S.DIM}{title}{S.RESET}"],
-            [14, 22, 60],
+            [14, 82],
         )
     print()
     more = f" (showing {len(shown)})" if len(shown) < len(selected) else ""

@@ -63,11 +63,19 @@ def cmd_init(args) -> int:
         "or design its own.",
     )
     if is_initialized() and not force:
-        print(f"  {S.warn(f'Already set up at {S.BOLD}{config_dir()}{S.RESET}')}")
-        print(f"  {S.DIM}Change one setting with {S.RESET}{S.BOLD}sw config <section>{S.RESET}"
-              f"{S.DIM}, or redo everything with {S.RESET}{S.BOLD}sw init --force{S.RESET}")
-        print()
-        return 0
+        if cfg.get("data_dir"):
+            print(f"  {S.warn(f'Already set up at {S.BOLD}{config_dir()}{S.RESET}')}")
+            print(f"  {S.DIM}Change one setting with {S.RESET}{S.BOLD}sw config <section>{S.RESET}"
+                  f"{S.DIM}, or redo everything with {S.RESET}{S.BOLD}sw init --force{S.RESET}")
+            print()
+            return 0
+        # an earlier setup ended without a data directory: finish it instead of stopping here
+        S.note(["Your setup has no data directory yet. Choose one to finish it."])
+        S.bar()
+        if _prompt_data_dir(cfg) == _EXIT:
+            return 0
+        save_config(cfg)
+        return 0 if _finish_init(cfg, ask_build=False) else 1
 
     steps = (
         _prompt_data_dir,
@@ -151,6 +159,38 @@ def _finish_init(cfg: dict, ask_build: bool, build: bool = False) -> bool:
 # go into the cfg dict (saved by the caller); instructions are saved at once.
 
 
+DEFAULT_DATA_DIR = "~/sciworld-data"
+NO_DATA_DIR = f"No data directory is set. Set one with {S.BOLD}sw init --data-dir <path>{S.RESET}."
+
+
+def ensure_data_dir(cfg: dict) -> str:
+    """The data directory. When none is set yet and there is a terminal, ask for
+    one, save it and create its layout, so the command can go on. Returns ``""``
+    when it is still unset (no terminal, or the user left)."""
+    if cfg.get("data_dir"):
+        return cfg["data_dir"]
+    if not S.is_interactive():
+        return ""
+    try:
+        stored = load_config(apply_env=False) if is_initialized() else dict(DEFAULT_CONFIG)
+    except ConfigError:
+        return ""
+    S.bar()
+    S.note(["No data directory is set yet. Choose one to continue."])
+    S.bar()
+    if _prompt_data_dir(stored) == _EXIT or not stored.get("data_dir"):
+        return ""
+    if not stored.get("session"):
+        stored["session"] = default_session()
+    if not stored.get("container"):
+        stored["container"] = "venv"
+    save_config(stored)
+    for sub in ("envs", "containers"):
+        (Path(stored["data_dir"]) / sub).mkdir(parents=True, exist_ok=True)
+    cfg["data_dir"] = stored["data_dir"]
+    return cfg["data_dir"]
+
+
 def _prompt_data_dir(cfg: dict) -> int:
     S.step_start("Data directory")
     S.bar()
@@ -173,19 +213,22 @@ def _prompt_data_dir(cfg: dict) -> int:
         if choice == 2:
             return _exit_setup()
     else:
-        choice = S.select("Configure data directory?", ["Set a path", "Skip", "Exit setup"], default=0)
-        if choice == 1:
-            S.bar()
-            S.step_done(f"{S.DIM}Skipped. Set it later with {S.RESET}{S.BOLD}sw config paths{S.RESET}")
-            return 0
+        choice = S.select("Data directory", [f"Use {DEFAULT_DATA_DIR}", "Choose another path", "Exit setup"], default=0)
         if choice == 2:
             return _exit_setup()
+        if choice == 0:
+            cfg["data_dir"] = str(Path(DEFAULT_DATA_DIR).expanduser().resolve())
+            S.bar()
+            S.step_done(S.success(f"Set to {S.BOLD}{cfg['data_dir']}{S.RESET}"))
+            return 0
     S.bar()
-    answer = S.prompt_path("Data directory")
+    answer = S.prompt_path("Data directory", default="" if existing else DEFAULT_DATA_DIR)
     if not answer.strip():
-        S.bar()
-        S.step_done(f"{S.DIM}No path given; left unchanged{S.RESET}")
-        return 0
+        if existing:
+            S.bar()
+            S.step_done(f"{S.DIM}No path given; left unchanged{S.RESET}")
+            return 0
+        answer = DEFAULT_DATA_DIR
     cfg["data_dir"] = str(Path(answer).expanduser().resolve())
     S.bar()
     S.step_done(S.success(f"Set to {S.BOLD}{cfg['data_dir']}{S.RESET}"))

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+### Changed
+
+- `sw list` no longer shows a milestone column.
+- Setup always ends with a data directory: the wizard offers `~/sciworld-data` instead of a skip, and `sw init` finishes a setup that has none instead of reporting it as done.
+- `sw select`, `sw research`, `sw info`, `sw status` and `sw evaluate` ask for the data directory when none is set yet, instead of sending you back to `sw init`. Without a terminal they name the command to run: `sw init --data-dir <path>`.
+
 ## 0.3.0
 
 First release from `zlab-princeton/scientist_world_cli`.

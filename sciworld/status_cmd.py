@@ -114,8 +114,11 @@ def cmd_status(args) -> int:
     if arxiv_id:
         arxiv_id = normalize_arxiv_id(arxiv_id)
     if not data_dir:
-        print(f"  {S.error(f'Data directory not set. Run {S.BOLD}sw init{S.RESET}.')}")
-        return 1
+        from sciworld.setup_cmd import NO_DATA_DIR, ensure_data_dir
+        data_dir = ensure_data_dir(cfg)
+        if not data_dir:
+            print(f"  {S.error(NO_DATA_DIR)}")
+            return 1
 
     rows = collect(data_dir, arxiv_id)
     if getattr(args, "json", False):

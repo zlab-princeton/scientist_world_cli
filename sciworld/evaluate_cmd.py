@@ -59,7 +59,8 @@ def _resolve(arxiv_id: Optional[str], run: Optional[str], path: Optional[str], d
         source = Path(recorded) if recorded and Path(recorded).is_dir() else run_dir.parent / "source"
         return source, run_dir, None
     if not data_dir:
-        return None, None, f"Data directory not set. Run {S.BOLD}sw init{S.RESET} or pass {S.BOLD}--path{S.RESET}."
+        from sciworld.setup_cmd import NO_DATA_DIR
+        return None, None, f"{NO_DATA_DIR} Or pass {S.BOLD}--path{S.RESET}."
     arxiv_dir = Path(data_dir) / "envs" / arxiv_id
     runs = list_runs(arxiv_dir)
     if not runs:
@@ -403,6 +404,9 @@ def cmd_evaluate(args) -> int:
             return _fail(str(exc))
 
     S.intro("Scientist World", subtitle=f"Evaluating {arxiv_id or path}")
+    if not path and not cfg.get("data_dir"):
+        from sciworld.setup_cmd import ensure_data_dir
+        ensure_data_dir(cfg)
     source, run_dir, error = _resolve(arxiv_id, run, path, cfg.get("data_dir") or "")
     if error:
         return _fail(error)
