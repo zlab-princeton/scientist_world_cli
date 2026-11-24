@@ -264,3 +264,37 @@ def test_reference_is_skipped_when_there_is_nothing_to_report(tmp_path, content)
         (repo / "scoring" / "scores_train.json").write_text(content)
     assert write_train_reference(repo, out) is False
     assert not (out / "READMEs" / "train_reference.json").exists()
+
+
+def _source_with_scripts(tmp_path):
+    src = tmp_path / "src"
+    for d in ("scripts/solvers", "scripts/hardening", "eval/train", "eval/test", "method", "baseline", "data"):
+        (src / d).mkdir(parents=True)
+    (src / "scripts" / "evaluate_train.sh").write_text(
+        '#!/bin/bash\n# see scripts/unused.sh\nsource "$(dirname "$0")/common_env.sh"\n'
+        'python -m eval.train.evaluate\necho "full run: bash scripts/run.sh"\n')
+    (src / "scripts" / "common_env.sh").write_text("export OMP_NUM_THREADS=1\n")
+    (src / "scripts" / "unused.sh").write_text("echo unused\n")
+    (src / "scripts" / "run.sh").write_text("bash scripts/evaluate_test.sh\n")
+    (src / "scripts" / "evaluate_test.sh").write_text("python -m eval.test.evaluate\n")
+    (src / "scripts" / "hardening" / "audit.sh").write_text("echo audit\n")
+    (src / "scripts" / "solvers" / "paper.sh").write_text("python method/solve.py \"$@\"\n")
+    (src / "scripts" / "solvers" / "majority.sh").write_text("python baseline/majority.py \"$@\"\n")
+    (src / "eval" / "train" / "evaluate.py").write_text(
+        '"""Runs every scripts/unused.sh-like entry point."""\n'
+        'from pathlib import Path\nROOT = Path(".")\n'
+        'SOLVERS = ROOT / "scripts" / "solvers"\nAUDIT = "scripts/hardening/audit.sh"\n')
+    (src / "method" / "solve.py").write_text("print(1)\n")
+    (src / "baseline" / "majority.py").write_text("print(0)\n")
+    return src
+
+
+@pytest.mark.parametrize("mode", ["improve", "innovate"])
+def test_scripts_the_visible_side_calls_are_kept(tmp_path, mode):
+    out = package_environment(_source_with_scripts(tmp_path), tmp_path / "ws", mode)
+    kept = sorted(str(p.relative_to(out / "scripts")) for p in (out / "scripts").rglob("*") if p.is_file())
+    expected = ["common_env.sh", "evaluate_train.sh", "solvers/majority.sh"]
+    if mode == "improve":
+        expected.append("solvers/paper.sh")
+    # comments, docstrings, the held-out evaluation, the builder's run and audit tooling stay out
+    assert kept == sorted(expected)

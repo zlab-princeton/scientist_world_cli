@@ -10,7 +10,7 @@ available as functions::
     sciworld.evaluate(id="2502.13759", run=run["run_name"])
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 from sciworld._api import (  # noqa: E402
     config,

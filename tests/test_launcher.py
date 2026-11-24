@@ -735,3 +735,45 @@ def test_prompt_composition():
     text = L.build_agent_prompt_text("SYS", "TASK", "run on one GPU", "## Environment\n\n- note")
     assert text == "SYS\n\nTASK\n\n## Compute\n\nrun on one GPU\n\n## Environment\n\n- note"
     assert L.build_agent_prompt_text("", "TASK", "", None) == "TASK"
+
+
+@pytest.mark.parametrize("improve", [True, False])
+def test_the_test_phase_knows_an_improve_run(tmp_path, improve):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    script = L.write_launch_script(
+        tmp_path / "launch.sh", ws, ["true"], tmp_path / "agent.log", test_phase_cmd=["true"],
+        test_source_dir=_source(tmp_path), improve=improve,
+    )
+    install = [line for line in script.read_text().splitlines() if "sciworld.guard test-phase" in line]
+    assert install and all(("--improve" in line) == improve for line in install)
+
+
+def test_the_test_phase_fetches_held_out_data_before_locking(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / "eval" / "train").mkdir(parents=True)
+    (ws / "method").mkdir()
+    (ws / "scripts").mkdir()
+    (ws / "scripts" / "download.sh").write_text("echo changed by the agent\n")
+    source = _source(tmp_path)
+    (source / "scripts" / "download.sh").write_text(
+        '#!/bin/bash\nif [ -d eval/test ]; then echo data > eval/test/fetched.txt; fi\n')
+    runtime = ["bash", "-c", 'cat >/dev/null; echo "ARGS $*"; echo \'{"done": true}\' > status.json; '
+                             'mkdir -p scoring; echo "{}" > scoring/scores_test.json', "runtime",
+               L.RawShellArg('"${SW_RO[@]}"')]
+    fetch = ["bash", "-c", 'echo "FETCH $*" >&2; bash scripts/download.sh', "runtime",
+             L.RawShellArg('"${SW_RO[@]}"')]
+    run_directory = tmp_path / ".sciworld" / "ws"
+    script = L.write_launch_script(
+        run_directory / "launch.sh", ws, runtime, run_directory / "agent.log", test_phase_cmd=runtime,
+        test_source_dir=source, ro_flag="--bind", test_prompt_text="TEST", test_fetch_cmd=fetch,
+    )
+    result = _run(script)
+    assert result.returncode == 0, result.stdout + result.stderr
+    log = (run_directory / "agent.log").read_text()
+    # no read-only mount yet, so the data can land in eval/test; then the test phase locks it
+    assert [l.rstrip() for l in log.splitlines() if l.startswith("FETCH")] == ["FETCH"]
+    assert (ws / "eval" / "test" / "fetched.txt").read_text() == "data\n"
+    assert (ws / "scripts" / "download.sh").read_text() == (source / "scripts" / "download.sh").read_text()
+    test_args = [l for l in result.stdout.splitlines() if l.startswith("ARGS")][-1]
+    assert "eval:/home/user/eval:ro" in test_args

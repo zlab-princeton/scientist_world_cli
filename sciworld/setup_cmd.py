@@ -63,19 +63,23 @@ def cmd_init(args) -> int:
         "or design its own.",
     )
     if is_initialized() and not force:
-        if cfg.get("data_dir"):
+        # an earlier setup that was skipped or left early is finished here,
+        # instead of being reported as done
+        missing = [step for key, step in (("data_dir", _prompt_data_dir), ("container", _prompt_container))
+                   if not cfg.get(key)]
+        if not missing:
             print(f"  {S.warn(f'Already set up at {S.BOLD}{config_dir()}{S.RESET}')}")
             print(f"  {S.DIM}Change one setting with {S.RESET}{S.BOLD}sw config <section>{S.RESET}"
                   f"{S.DIM}, or redo everything with {S.RESET}{S.BOLD}sw init --force{S.RESET}")
             print()
             return 0
-        # an earlier setup ended without a data directory: finish it instead of stopping here
-        S.note(["Your setup has no data directory yet. Choose one to finish it."])
+        S.note(["Your setup is not finished yet. Choose what is still missing."])
         S.bar()
-        if _prompt_data_dir(cfg) == _EXIT:
-            return 0
+        for step in missing:
+            if step(cfg) == _EXIT:
+                break
         save_config(cfg)
-        return 0 if _finish_init(cfg, ask_build=False) else 1
+        return 0 if _finish_init(cfg, ask_build=bool(cfg.get("container"))) else 1
 
     steps = (
         _prompt_data_dir,
@@ -180,10 +184,6 @@ def ensure_data_dir(cfg: dict) -> str:
     S.bar()
     if _prompt_data_dir(stored) == _EXIT or not stored.get("data_dir"):
         return ""
-    if not stored.get("session"):
-        stored["session"] = default_session()
-    if not stored.get("container"):
-        stored["container"] = "venv"
     save_config(stored)
     for sub in ("envs", "containers"):
         (Path(stored["data_dir"]) / sub).mkdir(parents=True, exist_ok=True)

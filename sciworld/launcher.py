@@ -52,6 +52,7 @@ _TEST_PHASE_RO_PATHS = [
     "scripts/evaluate_test.sh",
     "method",
     "scoring/scores_train.json",
+    "scoring/reference.json",
 ]
 
 # What the generated launcher protects. The list is evaluated before every
@@ -61,7 +62,7 @@ _TEST_PHASE_RO_PATHS = [
 LAUNCHER_MAIN_RO_PATHS = ["READMEs", "eval", "baseline",
                           "scripts/evaluate_train.sh", "scripts/baseline.sh"]
 LAUNCHER_TEST_RO_PATHS = LAUNCHER_MAIN_RO_PATHS + [
-    "scripts/evaluate_test.sh", "method", "scoring/scores_train.json",
+    "scripts/evaluate_test.sh", "method", "scoring/scores_train.json", "scoring/reference.json",
 ]
 
 
@@ -476,6 +477,8 @@ def write_launch_script(
     ro_flag: Optional[str] = None,
     localize: bool = False,
     done_hint: str = "",
+    improve: bool = False,
+    test_fetch_cmd: Optional[list] = None,
 ) -> Path:
     """Write the bash launcher for one run and return its path.
 
@@ -621,6 +624,9 @@ def write_launch_script(
     if test_enabled:
         lines.append("")
         lines += _emit_cmd_function("cmd_test", test_phase_cmd)
+    if test_enabled and test_fetch_cmd:
+        lines.append("")
+        lines += _emit_cmd_function("cmd_fetch", test_fetch_cmd)
 
     main_ro = " ".join(shlex.quote(p) for p in LAUNCHER_MAIN_RO_PATHS)
     test_ro = " ".join(shlex.quote(p) for p in LAUNCHER_TEST_RO_PATHS)
@@ -723,6 +729,8 @@ def write_launch_script(
         install = 'sw_py -m sciworld.guard test-phase "$WORKSPACE" "$SOURCE_DIR"'
         if localize:
             install += " --localize"
+        if improve:
+            install += " --improve"
         lines += [
             "",
             "# ── Test phase ──",
@@ -735,6 +743,17 @@ def write_launch_script(
             '    sw_info "main phase complete: adding the held-out evaluator."',
             f'    if {install} >> "$LOG" 2>&1; then',
         ]
+        if test_fetch_cmd:
+            # Some environments fetch the held-out data from scripts/download.sh,
+            # which skips that part while eval/test is absent. It runs now, from
+            # the source's copy, before the test phase's read-only mounts.
+            if ro_flag:
+                lines.append("        SW_RO=()")
+            lines += [
+                '        sw_info "test phase: fetching held-out data (scripts/download.sh)"',
+                '        cmd_fetch < /dev/null >> "$LOG" 2>&1 || sw_warn "scripts/download.sh exited with status $?; '
+                'the held-out evaluator may lack data. See $LOG"',
+            ]
         if ro_flag:
             lines.append(f"        ro_mounts {test_ro}")
         lines += [

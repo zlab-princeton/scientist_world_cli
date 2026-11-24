@@ -174,3 +174,25 @@ def test_command_line(tmp_path, capsys):
     assert guard.main(["test-phase", str(ws), str(tmp_path / "nope")]) == guard.EXIT_NO_TEST_SLICE
     assert guard.main(["test-phase", str(ws), str(_source(tmp_path))]) == 0
     assert guard.main(["frobnicate"]) == 2 and guard.main([]) == 2
+
+
+@pytest.mark.parametrize("improve", [True, False])
+def test_install_test_slice_adds_the_contract_and_missing_scripts(tmp_path, improve):
+    source = _source(tmp_path)
+    (source / "scoring").mkdir()
+    (source / "scoring" / "reference.json").write_text('{"experiments": {}}')
+    (source / "scripts" / "evaluate_test.sh").write_text(
+        "#!/bin/bash\nsource scripts/test_env.sh\nfor s in scripts/solvers/*.sh; do bash $s; done\n")
+    (source / "scripts" / "test_env.sh").write_text("export A=1\n")
+    (source / "scripts" / "solvers").mkdir()
+    (source / "scripts" / "solvers" / "paper.sh").write_text("python method/solve.py\n")
+    (source / "scripts" / "solvers" / "mine.sh").write_text("python baseline/majority.py\n")
+    ws = tmp_path / "ws"
+    (ws / "scripts" / "solvers").mkdir(parents=True)
+    (ws / "scripts" / "solvers" / "mine.sh").write_text("python method/my_solver.py\n")
+    guard.install_test_slice(ws, source, method_mode="improve" if improve else "innovate")
+    assert (ws / "scoring" / "reference.json").read_text() == '{"experiments": {}}'
+    assert (ws / "scripts" / "test_env.sh").read_text() == "export A=1\n"
+    # the scientist's own file is kept, and innovate gets no script that runs the paper's method
+    assert (ws / "scripts" / "solvers" / "mine.sh").read_text() == "python method/my_solver.py\n"
+    assert (ws / "scripts" / "solvers" / "paper.sh").exists() == improve

@@ -13,11 +13,14 @@ goes through this module, which never follows a link out of the workspace::
     python -m sciworld.guard prepare WORKSPACE
         Create the cache directories the container's environment points to.
 
-    python -m sciworld.guard test-phase WORKSPACE SOURCE [--localize]
-        Install the held-out evaluator from the environment source, and
-        remove a scoring/scores_test.json that is older than it. Exit status
-        4 if the source does not have the evaluator; the workspace is then
-        left as it was.
+    python -m sciworld.guard test-phase WORKSPACE SOURCE [--localize] [--improve]
+        Install the held-out evaluator from the environment source, with the
+        scoring contract, the scripts it calls and the source's
+        scripts/download.sh, and remove a
+        scoring/scores_test.json that is older than it. --improve marks an
+        improve run, which may also get scripts that run the paper's method.
+        Exit status 4 if the source does not have the evaluator; the
+        workspace is then left as it was.
 
     python -m sciworld.guard test-scores WORKSPACE
         Print "yes" if scoring/scores_test.json exists in the workspace, else
@@ -103,9 +106,16 @@ def _remove_stale_test_scores(workspace: Path) -> None:
         remove_tree(stale)
 
 
-def install_test_slice(workspace: Path, source: Path, localize: bool = False) -> None:
+def install_test_slice(workspace: Path, source: Path, localize: bool = False,
+                       method_mode: str = "innovate") -> None:
     """Replace ``eval/`` with the full evaluator of *source*, add
-    ``scripts/evaluate_test.sh`` and remove test scores that predate them.
+    ``scripts/evaluate_test.sh``, ``scoring/reference.json``, the scripts
+    the evaluator calls and the source's ``scripts/download.sh`` (which the
+    launcher runs next to fetch held-out data), and remove test scores that
+    predate them.
+
+    *method_mode* is the run's mode: an innovate workspace gets no script that
+    runs the paper's method.
 
     ``status.json`` is the scientist's file and is not touched: an agent
     that set it to done and later finds it changed back cannot be expected to
@@ -135,12 +145,58 @@ def install_test_slice(workspace: Path, source: Path, localize: bool = False) ->
     script = source / "scripts" / "evaluate_test.sh"
     mode = stat.S_IMODE(script.stat().st_mode) | stat.S_IXUSR | stat.S_IRUSR | stat.S_IWUSR
     copy_nofollow(script, scripts / "evaluate_test.sh", mode)
-    if not os.path.lexists(str(workspace / "scoring")):
-        (workspace / "scoring").mkdir()
+    scoring = workspace / "scoring"
+    if not os.path.lexists(str(scoring)):
+        scoring.mkdir()
+    # Some held-out evaluators read the scoring contract. The method is frozen
+    # by now, so it can be handed over; never through a link the agent made.
+    reference = source / "scoring" / "reference.json"
+    if (reference.is_file() and is_within(reference, source)
+            and scoring.is_dir() and not scoring.is_symlink()):
+        copy_nofollow(reference, scoring / "reference.json", 0o644)
+    # The launcher runs scripts/download.sh next, to fetch held-out data; the
+    # source's copy, whatever the scientist made of the workspace's.
+    download = source / "scripts" / "download.sh"
+    if download.is_file() and is_within(download, source):
+        copy_nofollow(download, scripts / "download.sh",
+                      stat.S_IMODE(download.stat().st_mode) | stat.S_IXUSR | stat.S_IRUSR | stat.S_IWUSR)
+    added = _install_test_scripts(workspace, source, script, method_mode)
     if localize:
         from sciworld.localize import localize_workspace
-        localize_workspace(workspace, ["eval", "scripts/evaluate_test.sh"])
+        localize_workspace(workspace, ["eval", "scripts/evaluate_test.sh", "scripts/download.sh"]
+                           + [f"scripts/{rel}" for rel in added])
     _remove_stale_test_scores(workspace)
+
+
+def _install_test_scripts(workspace: Path, source: Path, script: Path, method_mode: str) -> list:
+    """Add the scripts the held-out evaluator calls that the workspace lacks.
+
+    A file the workspace already has is the scientist's and is kept, and so is
+    a directory it replaced with a link or a file. Returns the added paths,
+    relative to ``scripts/``.
+    """
+    from sciworld.package import script_keep_paths
+
+    added: list = []
+    for rel in sorted(script_keep_paths(source, [script, source / "eval" / "test"], method_mode)):
+        dst = workspace / "scripts" / rel
+        if os.path.lexists(str(dst)):
+            continue
+        parent_rel = Path("scripts", rel).parent
+        blocked = False
+        current = workspace
+        for part in parent_rel.parts:
+            current = current / part
+            if current.is_symlink() or (current.exists() and not current.is_dir()):
+                blocked = True
+                break
+        if blocked:
+            continue
+        parent = ensure_real_dir(workspace, str(parent_rel))
+        src = source / "scripts" / rel
+        copy_nofollow(src, parent / dst.name, stat.S_IMODE(src.stat().st_mode) | stat.S_IRUSR | stat.S_IWUSR)
+        added.append(rel)
+    return added
 
 
 def is_done(workspace: Path, status_file: str = "status.json") -> bool:
@@ -170,8 +226,10 @@ def main(argv=None) -> int:
         prepare_workspace(Path(rest[0]))
         return 0
     if command == "test-phase" and len(rest) >= 2:
+        method_mode = "improve" if "--improve" in rest[2:] else "innovate"
         try:
-            install_test_slice(Path(rest[0]), Path(rest[1]), localize="--localize" in rest[2:])
+            install_test_slice(Path(rest[0]), Path(rest[1]), localize="--localize" in rest[2:],
+                               method_mode=method_mode)
         except FileNotFoundError as exc:
             print(f"sciworld.guard: {exc}", file=sys.stderr)
             return EXIT_NO_TEST_SLICE

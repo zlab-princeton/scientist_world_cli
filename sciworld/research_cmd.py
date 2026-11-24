@@ -685,6 +685,7 @@ def cmd_research(args) -> int:
         resume_cmd = _wrap(L.build_agent_cmd(agent, resume=True, model=model)) if loop else None
         test_enabled = has_test_slice(source_dir)
         test_cmd = _wrap(L.build_agent_cmd(agent, resume=True, model=model)) if test_enabled else None
+        fetch_cmd = _wrap(["bash", "scripts/download.sh"]) if test_enabled else None
     except ValueError as exc:
         return fail(str(exc))
 
@@ -705,6 +706,8 @@ def cmd_research(args) -> int:
         ro_flag=None if backend == "venv" else L.ro_bind_flag(backend),
         localize=backend == "venv",
         done_hint=f"score it with: {score_hint}",
+        improve=mode == "improve",
+        test_fetch_cmd=fetch_cmd,
     )
     rundir.write_record(env_dir, {
         "arxiv_id": arxiv_id,

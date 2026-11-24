@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+### Fixed
+
+- A workspace now gets the scripts its visible side calls, not only `baseline.sh`, `download.sh` and `evaluate_train.sh`: helpers that `evaluate_train.sh` sources, scripts `baseline.sh` runs, and method registries the visible evaluator runs (such as `scripts/solvers/`). The held-out evaluation, the builder's own reproduction and audit tooling are never copied, and an innovate workspace gets no script that runs the paper's method.
+- The test phase also installs `scoring/reference.json`, which some held-out evaluators read, and any script the held-out evaluator calls that the workspace lacks. Files the scientist already has are kept. `scoring/reference.json` is read-only during the test phase.
+- `sw init` finishes a setup that has no container backend yet, instead of reporting it as done. Choosing a data directory from another command no longer sets the backend to venv on its own.
+
 ## 0.3.1
 
 ### Changed
